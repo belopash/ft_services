@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: telegraf-deploy
+    labels:
+        app: telegraf
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: telegraf
+    template:
+        metadata:
+            labels:
+                app: telegraf
+        spec:
+            containers:
+                - name: telegraf
+                  image: telegraf
+                  imagePullPolicy: Never
+                  ports:
+                      - containerPort: 8087
+                  envFrom:
+                      - secretRef:
+                            name: telegraf-secrets
+                  volumeMounts:
+                      - name: telegraf-config-volume
+                        mountPath: /etc/telegraf.conf
+                        subPath: telegraf.conf
+                        readOnly: true
+                      - name: docker-socket
+                        mountPath: "/var/run/docker.sock"
+            volumes:
+                - name: telegraf-config-volume
+                  configMap:
+                      name: telegraf-config
+                - name: docker-socket
+                  hostPath:
+                      path: /var/run/docker.sock
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: telegraf-service
+    annotations:
+        metallb.universe.tf/allow-shared-ip: sharing key
+spec:
+    type: LoadBalancer
+    loadBalancerIP: 192.168.99.100
+    selector:
+        app: telegraf
+    ports:
+        - protocol: TCP
+          port: 8087
+          targetPort: 8087
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: telegraf-config
+data:
+    telegraf.conf: |+
+        [agent]
+        interval = "5s"
+        [[outputs.influxdb]]
+        urls = ["$INFLUXDB_URL"]
+        database = "$INFLUXDB_DB"
+        username = "$INFLUXDB_USER"
+        password = "$INFLUXDB_USER_PASSWORD"
+        [[inputs.docker]]
+        endpoint = "unix:///var/run/docker.sock"
+        gather_services = false
+        container_names = []
+        source_tag = false
+        container_name_include = []
+        container_name_exclude = []
+        timeout = "5s"
+        perdevice = true
+        total = false
+        docker_label_include = []
+        docker_label_exclude = ["*annotation.kubernetes*"]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: telegraf-secrets
+type: Opaque
+stringData:
+    INFLUXDB_DB: telegraf
+    INFLUXDB_URL: http://influxdb-service:8086
+    INFLUXDB_USER: telegraf
+    INFLUXDB_USER_PASSWORD: telegraf

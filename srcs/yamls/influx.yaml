@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: influxdb-service
+spec:
+    type: ClusterIP
+    selector:
+        app: influxdb
+
+    ports:
+        - name: http
+          protocol: TCP
+          port: 8086
+          targetPort: 8086
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: influxdb-pvc
+spec:
+    storageClassName: influxdb-storage
+    accessModes:
+        - ReadWriteOnce
+    resources:
+        requests:
+            storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: influxdb-deploy
+    labels:
+        app: influxdb
+
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: influxdb
+
+    template:
+        metadata:
+            labels:
+                app: influxdb
+
+        spec:
+            containers:
+                - name: influxdb
+
+                  imagePullPolicy: Never
+                  image: influxdb
+
+                  ports:
+                      - containerPort: 8086
+                  volumeMounts:
+                      - mountPath: /var/lib/influxdb
+
+                        name: var-lib-influxdb
+                  envFrom:
+                      - secretRef:
+                            name: influxdb-secrets
+            volumes:
+                - name: var-lib-influxdb
+
+                  persistentVolumeClaim:
+                      claimName: influxdb-pvc
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: influxdb-secrets
+type: Opaque
+stringData:
+    influxdb_CONFIG_PATH: /etc/influxdb.conf
+    influxdb_ADMIN_USER: admin
+    influxdb_ADMIN_PASSWORD: admin
+    influxdb_DB: test
+    influxdb_USER: user
+    influxdb_USER_PASSWORD: user
